@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>城市天气查询</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, #e6f2ff, #ffffff);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(520px, 100%);
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 24px 48px rgba(35, 67, 105, 0.15);
+      padding: 32px;
+      display: grid;
+      gap: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      color: #1b2a4e;
+    }
+
+    p {
+      margin: 0;
+      color: #42526e;
+      line-height: 1.5;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #d0d9e5;
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    input[type="text"]:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    button {
+      border: none;
+      padding: 12px 20px;
+      border-radius: 12px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 20px rgba(37, 99, 235, 0.25);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      background: #9db7f5;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .result {
+      background: #f5f8ff;
+      border-radius: 16px;
+      padding: 18px;
+      min-height: 86px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .result strong {
+      color: #1f3b7a;
+      font-size: 18px;
+    }
+
+    .status {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .error {
+      color: #dc2626;
+    }
+
+    .meta {
+      font-size: 13px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <header>
+      <h1>城市天气查询</h1>
+      <p>输入城市名称，点击查询按钮即可获取最新天气概览。</p>
+    </header>
+
+    <section class="input-row">
+      <input id="cityInput" type="text" placeholder="例如：北京 / Shanghai" />
+      <button id="searchButton">查询天气</button>
+    </section>
+
+    <section class="result" aria-live="polite">
+      <strong id="resultTitle">等待查询</strong>
+      <div id="resultBody" class="status">请输入城市名称并点击查询。</div>
+      <div id="resultMeta" class="meta"></div>
+    </section>
+  </main>
+
+  <script>
+    const cityInput = document.getElementById("cityInput");
+    const searchButton = document.getElementById("searchButton");
+    const resultTitle = document.getElementById("resultTitle");
+    const resultBody = document.getElementById("resultBody");
+    const resultMeta = document.getElementById("resultMeta");
+
+    const WEATHER_CODE_MAP = {
+      0: "晴朗",
+      1: "主要晴朗",
+      2: "局部多云",
+      3: "阴天",
+      45: "有雾",
+      48: "雾凇",
+      51: "小毛毛雨",
+      53: "毛毛雨",
+      55: "较强毛毛雨",
+      56: "冻雨(轻)",
+      57: "冻雨(强)",
+      61: "小雨",
+      63: "中雨",
+      65: "大雨",
+      66: "冻雨",
+      67: "强冻雨",
+      71: "小雪",
+      73: "中雪",
+      75: "大雪",
+      77: "雪粒",
+      80: "阵雨(轻)",
+      81: "阵雨",
+      82: "阵雨(强)",
+      85: "阵雪(轻)",
+      86: "阵雪(强)",
+      95: "雷暴",
+      96: "雷暴伴冰雹(轻)",
+      99: "雷暴伴冰雹(强)"
+    };
+
+    const setStatus = (title, body, meta = "", isError = false) => {
+      resultTitle.textContent = title;
+      resultBody.textContent = body;
+      resultBody.classList.toggle("error", isError);
+      resultMeta.textContent = meta;
+    };
+
+    const fetchWeather = async () => {
+      const city = cityInput.value.trim();
+      if (!city) {
+        setStatus("请输入城市", "城市名称不能为空，请先输入。", "", true);
+        return;
+      }
+
+      searchButton.disabled = true;
+      setStatus("正在查询", "正在定位城市并获取天气数据…");
+
+      try {
+        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`;
+        const geoResponse = await fetch(geocodeUrl);
+        if (!geoResponse.ok) {
+          throw new Error("无法访问地理编码服务");
+        }
+
+        const geoData = await geoResponse.json();
+        if (!geoData.results || geoData.results.length === 0) {
+          setStatus("未找到城市", "没有匹配的城市，请尝试更具体的名称。", "", true);
+          return;
+        }
+
+        const location = geoData.results[0];
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`;
+        const weatherResponse = await fetch(weatherUrl);
+        if (!weatherResponse.ok) {
+          throw new Error("无法访问天气服务");
+        }
+
+        const weatherData = await weatherResponse.json();
+        const current = weatherData.current;
+        const weatherText = WEATHER_CODE_MAP[current.weather_code] || "未知天气";
+
+        setStatus(
+          `${location.name} 当前天气`,
+          `${weatherText} · 气温 ${current.temperature_2m}°C (体感 ${current.apparent_temperature}°C) · 湿度 ${current.relative_humidity_2m}% · 风速 ${current.wind_speed_10m} km/h`,
+          `数据更新时间：${current.time.replace("T", " ")}`
+        );
+      } catch (error) {
+        setStatus("查询失败", error.message || "暂时无法获取天气信息，请稍后再试。", "", true);
+      } finally {
+        searchButton.disabled = false;
+      }
+    };
+
+    searchButton.addEventListener("click", fetchWeather);
+    cityInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        fetchWeather();
+      }
+    });
+  </script>
+</body>
+</html>
